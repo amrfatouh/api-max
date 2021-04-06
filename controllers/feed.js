@@ -8,35 +8,29 @@ const mongoose = require("mongoose")
 
 const POSTS_PER_PAGE = 3;
 
-exports.getPosts = (req, res, next) => {
-  const currentPage = +req.query.page || 1;
-  let pagination;
-
-  Post.find().countDocuments().then(count => {
-    const lastPage = Math.ceil(count/POSTS_PER_PAGE) || 1;
-    console.log(count)
-    console.log(lastPage);
-    pagination = {
+exports.getPosts = async (req, res, next) => {
+  try {
+    const currentPage = +req.query.page || 1;
+      const count = await Post.find().countDocuments();
+    const lastPage = Math.ceil(count  /  POSTS_PER_PAGE) || 1;
+    const pagination = {
       currentPage: currentPage,
       previousPage: currentPage - 1,
       nextPage: currentPage + 1,
       lastPage: lastPage,
       hasPrev: currentPage > 1,
-      hasNext: currentPage < lastPage
+      hasNext: currentPage < lastPage,
     };
-    return Post.find().skip((currentPage - 1) * POSTS_PER_PAGE)
-    .limit(POSTS_PER_PAGE)
-  }).then(posts => {
+    const posts = await Post.find()
+      .skip((currentPage - 1) * POSTS_PER_PAGE).limit(POSTS_PER_PAGE);
     res.status(200).json({ posts, pagination });
-  }).catch(err => {
+  } catch (err) {
     if (!err.statusCode) err.statusCode = 500;
     next(err);
-  })
-
-  
+  }
 };
 
-exports.createPost = (req, res, next) => {
+exports.createPost = async (req, res, next) => {
   const { title, content } = req.body;
   const image = req.file;
 
@@ -64,39 +58,39 @@ exports.createPost = (req, res, next) => {
     imageUrl,
     creator: req.userId 
   });
-  post.save().then((result) => {
-    return User.findOne({_id: req.userId})
-  }).then(user => {
+  
+  try {
+    await post.save()
+    const user = await User.findOne({_id: req.userId})
     user.posts.push(post);
-    return user.save();
-  }).then(() => {
+    await user.save();
     res.status(201).json({
       message: "post successfully created!",
       post: { title, content, imageUrl, creator: req.userId },
     });
-  })
-  .catch(err => {
+  } catch (err) {
     if (!err.statusCode) err.statusCode = 500;
     next(err);
-  });
+  }
 };
 
-exports.getPost = (req, res, next) => {
+exports.getPost = async (req, res, next) => {
   const postId = req.params.postId;
-  Post.findOne({_id: postId}).then(post => {
+  try {
+    const post = await Post.findOne({_id: postId})
     if (!post) {
       const error = new Error("post not found");
       error.statusCode = 404;
       throw error
     }
     res.json({post});
-  }).catch(err => {
+  } catch (err) {
     if (!err.statusCode) err.statusCode = 500;
     next(err);
-  })
+  }
 }
 
-exports.updatePost = (req,res,next) => {
+exports.updatePost = async (req,res,next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     const error = new Error("the inputs are invalid");
@@ -105,10 +99,10 @@ exports.updatePost = (req,res,next) => {
     throw error;
   }
   
-  const {title, content} = req.body;
-  const postId = req.params.postId;
-  let updatedPost;
-  Post.findOne({_id: postId}).then(post => {
+  try {
+    const {title, content} = req.body;
+    const postId = req.params.postId;
+    const post = await Post.findOne({_id: postId})
     if (!post) {
       const error = new Error("post not found");
       error.statusCode = 404;
@@ -127,36 +121,32 @@ exports.updatePost = (req,res,next) => {
     post.title = title;
     post.content = content;
     post.imageUrl = imageUrl;
-    updatedPost = post;
-    return post.save();
-  })
-  .then(() => { res.json({post: updatedPost}) })
-  .catch(err => {
+    await post.save();
+    res.json({post}) 
+  } catch (err) {
     if (!err.statusCode) err.statusCode = 500;
     next(err);
-  })
+  }
 } 
 
-exports.deletePost = (req, res, next) => {
-  Post.findOne({_id: req.params.postId}).then((post) => {
+exports.deletePost = async (req, res, next) => {
+  try {
+    const post = await Post.findOne({_id: req.params.postId})
     if (post.creator.toString() !== req.userId.toString()) {
       const error = new Error("you're not authorized to delete that post");
       error.statusCode = 401;
       throw error;
     } 
     deleteImage(post.imageUrl);
-    return Post.deleteOne({_id: req.params.postId})
-  }).then(() => {
-    return User.findOne({_id: req.userId})
-  }).then(user => {
+    await Post.deleteOne({_id: req.params.postId})
+    const user = await User.findOne({_id: req.userId})
     user.posts.pull(req.params.postId);
-    return user.save()
-  }).then(() => {
+    await user.save()
     res.json({message: "post deleted successfully"});
-  }).catch (err => {
+  } catch (err) {
     if (!err.statusCode) err.statusCode = 500;
     next(err);
-  });
+  }
 }
 
 const deleteImage = (filePath) => {
